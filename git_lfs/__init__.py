@@ -155,6 +155,8 @@ def fetch(git_repo, checkout_dir=None, verbose=0):
     """Download all the files managed by Git LFS
     """
     git_dir = git_repo+'/.git' if os.path.isdir(git_repo+'/.git') else git_repo
+    if verbose > 0:
+        print('DEBUG: git dir: {}'.format(git_dir))
     checkout_dir = checkout_dir or git_repo
     if checkout_dir == git_dir:
         print('Can\'t checkout into a bare repo, please provide a valid '
@@ -169,6 +171,8 @@ def fetch(git_repo, checkout_dir=None, verbose=0):
                 check_output(['git', 'reset', 'HEAD'])
 
     # Read the LFS metadata
+    if verbose > 0:
+        print('DEBUG: read lfs metadata...')
     found = False
     oid_list, lfs_files = [], {}
     for path, oid, size in read_lfs_metadata(checkout_dir):
@@ -204,13 +208,18 @@ def fetch(git_repo, checkout_dir=None, verbose=0):
         return
 
     # Fetch the URLs of the files from the Git LFS endpoint
+    if verbose > 0:
+        print('DEBUG: get fetch urls...')
     lfs_url, lfs_auth_info = get_lfs_endpoint_url(git_repo, checkout_dir)
+    if lfs_url.find('https://hf.co/') == 0:
+        if verbose > 0:
+            print('DEBUG: fixup huggingface url (FIXME)')
+        lfs_url = 'https://huggingface.co/{}'.format(lfs_url[14:])
 
     if verbose > 0:
-        print('Fetching URLs from %s ...' % lfs_url)
-    if verbose > 1:
-        print('Authorization info for URL: %s' % lfs_auth_info)
-        print('oid_list: %s' % pprint.pformat(oid_list))
+        print('Fetching URLs from {} ...'.format(lfs_url))
+        print('Authorization info for URL: {}'.format(lfs_auth_info))
+        print('DEBUG: oid_list: {}'.format(pprint.pformat(oid_list)))
     objects = fetch_urls(lfs_url, lfs_auth_info, oid_list)
 
     # Download the files
@@ -218,6 +227,8 @@ def fetch(git_repo, checkout_dir=None, verbose=0):
     if not os.path.exists(tmp_dir):
         os.makedirs(tmp_dir)
     for obj in objects:
+        if verbose > 0:
+            print("DEBUG: obj: {}".format(obj))
         oid, size = (obj['oid'], obj['size'])
         path = lfs_files[(oid, size)]
         cache_dir = get_cache_dir(git_dir, oid)
@@ -225,10 +236,13 @@ def fetch(git_repo, checkout_dir=None, verbose=0):
         # Download into tmp_dir
         with TempFile(dir=tmp_dir) as f:
             url = obj['actions']['download']['href']
-            head = obj['actions']['download']['header']
             print('Downloading %s (%s bytes) from %s...' %
                   (path, size, url if verbose > 0 else url[:40]))
-            h = urlopen(Request(url, headers=head))
+            if 'header' in obj['actions']['download']:
+                head = obj['actions']['download']['header']
+                h = urlopen(Request(url, headers=head))
+            else:
+                h = urlopen(Request(url))
             while True:
                 buf = h.read(10240)
                 if not buf:
